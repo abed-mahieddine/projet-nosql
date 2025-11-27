@@ -1,130 +1,185 @@
-# Projet NoSQL
+# Projet NoSQL - Supervision Industrielle
 
-Application web Flask qui permet de saisir des données via un formulaire et de les stocker dans MongoDB et Redis.
+Application web Flask de supervision industrielle avec intégration de données météorologiques en temps réel. Le système utilise MongoDB pour l'historique et Redis pour l'état actuel des équipements.
 
 ## Description
 
-Le projet simule un système de supervision industrielle. Les données saisies sont enregistrées dans deux bases NoSQL :
-- MongoDB pour garder l'historique complet
-- Redis pour l'état en temps réel
+Ce projet simule un système de supervision industrielle permettant de :
+- Surveiller l'état des équipements industriels (température, pression)
+- Suivre les conditions météorologiques de sites géographiques distants
+- Stocker l'historique dans MongoDB
+- Maintenir l'état en temps réel dans Redis
+
+## Fonctionnalités
+
+### Dashboard Machines
+- Visualisation en temps réel de l'état des équipements
+- Saisie manuelle de mesures (température ou pression)
+- Calcul automatique du statut (NORMAL, WARNING, CRITICAL)
+- Historique des mesures avec filtrage automatique
+
+### Dashboard Météo
+- Données météorologiques en temps réel pour 3 villes (Paris, New York, Tokyo)
+- Température, humidité et conditions météo
+- Température ressentie
+- Historique des données météo
+- Fallback sur cache en cas d'indisponibilité de l'API
 
 ## Installation
 
 ### Prérequis
 - Docker et Docker Compose
 - Git
+- Clé API OpenWeatherMap (gratuite sur [openweathermap.org](https://openweathermap.org/api))
 
-### Lancement
+### Configuration
 
-1. Cloner le repo
+1. Cloner le repository
 ```bash
 git clone <url-du-repo>
 cd projet_no-sql
 ```
 
-2. Lancer avec docker compose
+2. Configurer la clé API OpenWeatherMap
+
+Éditer `app/app.py` et remplacer la clé API :
+```python
+OPENWEATHER_API_KEY = 'votre_cle_api_ici'
+```
+
+3. Lancer l'application
 ```bash
 docker compose up
 ```
 
-3. Ouvrir dans le navigateur
+4. Accéder à l'interface
 ```
 http://localhost:5000
 ```
 
 ## Utilisation
 
-### Générer des données
+### Dashboard Machines
 
-Ouvrir le navigateur sur `http://localhost:5000`. Vous devriez voir l'interface "Supervision Industrielle".
+1. Accéder à la page principale (`http://localhost:5000`)
+2. Dans le formulaire "Saisie de données", saisir :
+   - **Équipement** : Machine-A1, Machine-B2 ou Machine-C3
+   - **Type de mesure** : Température (°C) ou Pression (Bar)
+   - **Valeur mesurée** : une valeur numérique
+3. Cliquer sur "Enregistrer la mesure"
 
-Dans le formulaire "Saisie de données", faire un test avec une valeur critique :
-- **Équipement** : Machine-A1
-- **Type de mesure** : Température
-- **Valeur mesurée** : 95 (valeur > 80, donc statut CRITICAL)
+Le statut est calculé automatiquement :
+- Valeur > 80 : **CRITICAL** (rouge)
+- Valeur > 50 : **WARNING** (orange)
+- Sinon : **NORMAL** (vert)
 
-Cliquer sur "Enregistrer la mesure".
+### Dashboard Météo
 
-Résultat attendu : La carte Machine-A1 passe au rouge et une nouvelle ligne apparaît dans le tableau "Historique des mesures".
+1. Cliquer sur l'onglet "Météo" dans la navigation
+2. Les données sont récupérées automatiquement depuis l'API OpenWeatherMap
+3. Cliquer sur "Actualiser les données" pour mettre à jour
 
-### Vérifier la persistance
+Les données affichées :
+- Température actuelle
+- Température ressentie
+- Humidité relative
+- Conditions météorologiques
+- Historique des dernières mesures
 
-Ouvrir deux terminaux pour vérifier que les données sont bien stockées dans les deux systèmes.
+## Vérification de la persistance
 
-#### Redis (état temps réel)
+### Redis (état temps réel)
 
-Dans le premier terminal :
+Vérifier l'état d'une machine :
 ```bash
 docker exec -it nosql_redis redis-cli HGETALL machine:Machine-A1
 ```
 
-Vous devriez voir les champs avec `current_value` à "95" et `status` à "CRITICAL".
-
-Pour voir le compteur d'alertes :
+Vérifier le compteur d'alertes :
 ```bash
 docker exec -it nosql_redis redis-cli GET global_alerts_count
 ```
 
-#### MongoDB (historique)
-
-Dans le second terminal :
+Vérifier les données météo en cache :
 ```bash
-docker exec -it nosql_mongo mongosh factory_db --eval "db.sensor_logs.find().sort({_id:-1}).limit(1)"
+docker exec -it nosql_redis redis-cli HGETALL weather:Paris
 ```
 
-Vous devriez voir un document JSON avec `machine_id: "Machine-A1"`, `value: 95` et `status: "CRITICAL"`.
+### MongoDB (historique)
 
-Si vous obtenez ces résultats, la persistance fonctionne correctement dans les deux bases.
+Voir les dernières mesures machines :
+```bash
+docker exec -it nosql_mongo mongosh factory_db --eval "db.sensor_logs.find({machine_id: {\$exists: true}}).sort({_id:-1}).limit(5)"
+```
+
+Voir les dernières données météo :
+```bash
+docker exec -it nosql_mongo mongosh factory_db --eval "db.sensor_logs.find({site: {\$exists: true}}).sort({_id:-1}).limit(5)"
+```
 
 ## Architecture
 
-3 containers Docker :
-- web : app Flask sur le port 5000
-- mongo : MongoDB sur le port 27017
-- redis : Redis sur le port 6379
+Le projet utilise 3 containers Docker :
+- **web** : Application Flask sur le port 5000
+- **mongo** : MongoDB sur le port 27017
+- **redis** : Redis sur le port 6379
 
-## Structure
+### Stockage des données
+
+- **MongoDB** : Stocke tout l'historique (machines + météo)
+  - Collection `sensor_logs` pour toutes les données
+  - Filtrage par `machine_id` ou `site` selon le contexte
+
+- **Redis** : Stocke uniquement l'état actuel
+  - Clés `machine:{id}` pour les équipements
+  - Clés `weather:{ville}` pour les données météo
+  - Compteur `global_alerts_count` pour les alertes critiques
+
+## Structure du projet
 
 ```
 projet_no-sql/
 ├── app/
-│   ├── app.py
+│   ├── app.py                 # Application Flask principale
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── static/
 │   │   └── css/
-│   │       └── style.css
+│   │       └── style.css      # Styles de l'interface
 │   └── templates/
-│       ├── base.html
-│       └── dashboard.html
+│       ├── base.html          # Template de base
+│       ├── dashboard.html    # Dashboard machines
+│       └── weather.html       # Dashboard météo
 ├── docker-compose.yml
 └── README.md
 ```
 
-## Technologies
+## Technologies utilisées
 
-- Python 3.9, Flask
-- MongoDB, Redis
-- HTML/CSS
-- Docker
+- **Backend** : Python 3.9, Flask
+- **Bases de données** : MongoDB, Redis
+- **API externe** : OpenWeatherMap API
+- **Frontend** : HTML/CSS, Font Awesome
+- **Containerisation** : Docker, Docker Compose
 
-## Notes
+## Notes importantes
 
-- Les données sont sauvegardées dans les deux bases à chaque soumission
-- MongoDB garde tout l'historique
-- Redis stocke seulement la dernière valeur de chaque machine
-- Le statut est calculé automatiquement :
-  - > 80 : CRITICAL
-  - > 50 : WARNING
-  - sinon : NORMAL
+- Les données machines et météo sont stockées dans la même collection MongoDB mais filtrées selon le contexte
+- En cas d'indisponibilité de l'API météo, le système utilise les données en cache Redis
+- Les seuils de statut peuvent être modifiés dans `app.py` (lignes 47-51)
+- La clé API OpenWeatherMap peut nécessiter 10-15 minutes d'activation après création
 
-## Arrêt
+## Arrêt de l'application
 
 ```bash
 docker compose down
 ```
 
-Pour supprimer aussi les volumes :
+Pour supprimer aussi les volumes (données) :
 ```bash
 docker compose down -v
 ```
+
+## Auteur
+
+Projet réalisé dans le cadre d'un cours sur les bases de données NoSQL.

@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="header-bar">
+    <div>
+        <h1 class="page-title">Monitoring Sites Extérieurs</h1>
+        <p class="page-subtitle">Données météorologiques en temps réel</p>
+    </div>
+    
+    {% if weather_sites and weather_sites[0].status == 'ERROR' and 'Clé API' in weather_sites[0].description %}
+    <div class="status-badge" style="background: rgba(239, 68, 68, 0.15); color: var(--status-crit); border: 1px solid rgba(239, 68, 68, 0.3);">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>Clé API invalide</span>
+    </div>
+    {% else %}
+    <div class="status-badge" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <i class="fa-solid fa-cloud-sun"></i>
+        <span>Données en direct</span>
+    </div>
+    {% endif %}
+</div>
+
+{% if weather_sites and weather_sites[0].status == 'ERROR' and 'Clé API' in weather_sites[0].description %}
+<div class="panel" style="background: rgba(239, 68, 68, 0.1); border-color: var(--status-crit); margin-bottom: 2rem;">
+    <h3 class="panel-title" style="color: var(--status-crit);">
+        <i class="fa-solid fa-triangle-exclamation"></i> Erreur de configuration API
+    </h3>
+    <p style="color: var(--text-primary); margin-bottom: 1rem;">
+        Impossible de récupérer les données météorologiques. Vérifiez la configuration de la clé API.
+    </p>
+    <ul style="color: var(--text-secondary); margin-left: 1.5rem; line-height: 1.8;">
+        <li>Vérifier que la clé API est correctement configurée dans le fichier de configuration</li>
+        <li>Attendre quelques minutes après la création d'une nouvelle clé</li>
+        <li>Vérifier les restrictions éventuelles sur la clé API</li>
+        <li>Consulter le statut du compte OpenWeatherMap</li>
+    </ul>
+</div>
+{% endif %}
+
+<div class="grid-container">
+    {% for site in weather_sites %}
+    <div class="card st-{{ site.status }}" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div class="card-header">
+            <span class="machine-name">
+                <i class="fa-solid fa-location-dot"></i> {{ site.display_name }}
+            </span>
+            <span class="dot"></span>
+        </div>
+        
+        <div class="metric-display" style="color: white;">
+            {{ site.temperature }}<span class="unit">°C</span>
+            {% if site.feels_like and site.feels_like != site.temperature %}
+            <div style="font-size: 0.75rem; margin-top: 0.25rem; opacity: 0.9;">
+                Ressenti: {{ site.feels_like }}°C
+            </div>
+            {% endif %}
+        </div>
+        
+        <div class="meta-info" style="color: rgba(255,255,255,0.9);">
+            <div style="margin-bottom: 0.5rem;">
+                <i class="fa-solid fa-droplet"></i> Humidité : <strong>{{ site.humidity }}%</strong>
+            </div>
+            <div style="margin-bottom: 0.5rem;">
+                <i class="fa-solid fa-cloud"></i> {{ site.description }}
+            </div>
+            <div style="margin-bottom: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
+                <i class="fa-solid fa-info-circle"></i> Source: OpenWeatherMap
+            </div>
+            <div>
+                <i class="fa-regular fa-clock"></i> 
+                {{ site.last_update.split(' ')[1] if ' ' in site.last_update else site.last_update }}
+            </div>
+            {% if site.status == 'CACHED' %}
+            <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
+                <i class="fa-solid fa-database"></i> Données en cache
+            </div>
+            {% elif site.status == 'ERROR' %}
+            <div style="margin-top: 0.5rem; font-size: 0.75rem; opacity: 0.8;">
+                <i class="fa-solid fa-triangle-exclamation"></i> {{ site.description }}
+                {% if site.error_detail %}
+                <br><span style="font-size: 0.7rem; opacity: 0.7;">{{ site.error_detail }}</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="panel">
+    <h3 class="panel-title">
+        <i class="fa-solid fa-cloud-sun-rain"></i> Historique des données météo
+    </h3>
+    <div class="table-responsive">
+        <table>
+            <thead>
+                <tr>
+                    <th><i class="fa-solid fa-clock"></i> Horodatage</th>
+                    <th><i class="fa-solid fa-location-dot"></i> Site</th>
+                    <th><i class="fa-solid fa-temperature-half"></i> Température</th>
+                    <th><i class="fa-solid fa-droplet"></i> Humidité</th>
+                    <th><i class="fa-solid fa-cloud"></i> Conditions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% if history %}
+                    {% for entry in history %}
+                    <tr>
+                        <td style="font-family: 'Courier New', monospace; color: var(--text-secondary); font-size: 0.875rem;">
+                            {{ entry.timestamp }}
+                        </td>
+                        <td><strong>{{ entry.site }}</strong></td>
+                        <td>{{ entry.temperature }} <span style="color: var(--text-muted);">°C</span></td>
+                        <td>{{ entry.humidity }}%</td>
+                        <td>{{ entry.description }}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: var(--text-secondary); padding: 2rem;">
+                            <i class="fa-solid fa-inbox"></i> Aucune donnée météo enregistrée
+                        </td>
+                    </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div style="text-align: center; margin-top: 2rem;">
+    <a href="{{ url_for('weather_dashboard') }}" class="btn-primary" style="display: inline-block;">
+        <i class="fa-solid fa-arrows-rotate"></i> Actualiser les données
+    </a>
+</div>
+{% endblock %}
+

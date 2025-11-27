@@ -19,6 +19,14 @@
                     </div>
                 </div>
                 <div class="header-right">
+                    <nav class="main-nav">
+                        <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                            <i class="fa-solid fa-industry"></i> Machines
+                        </a>
+                        <a href="{{ url_for('weather_dashboard') }}" class="nav-link {% if request.endpoint == 'weather_dashboard' %}active{% endif %}">
+                            <i class="fa-solid fa-cloud-sun"></i> Météo
+                        </a>
+                    </nav>
                     <div class="status-indicator">
                         <i class="fa-solid fa-circle-dot"></i>
                         <span>Système opérationnel</span>
