@@ -179,7 +179,3 @@ Pour supprimer aussi les volumes (données) :
 ```bash
 docker compose down -v
 ```
-
-## Auteur
-
-Projet réalisé dans le cadre d'un cours sur les bases de données NoSQL.
