@@ -15,7 +15,7 @@ Ce projet simule un système de supervision industrielle (Dashboard IoT) permett
 Le système simule des capteurs qui envoient des données (température, humidité, pression, alertes). Ces données sont affichées sur un dashboard en temps réel.
 
 **Pourquoi Redis ?**
-- Alertes en temps réel (ex: "Surchauffe détectée !")
+- Alertes en temps réel 
 - Dernières valeurs "live" pour un affichage instantané
 - Structure hash pour accès rapide
 - Compteur d'alertes global
@@ -46,7 +46,7 @@ Le système simule des capteurs qui envoient des données (température, humidit
 ### Prérequis
 - Docker et Docker Compose
 - Git
-- Clé API OpenWeatherMap (gratuite sur [openweathermap.org](https://openweathermap.org/api)) - optionnel
+- Clé API OpenWeatherMap (gratuite sur [openweathermap.org](https://openweathermap.org/api)) 
 
 ### Configuration
 
@@ -56,7 +56,7 @@ git clone <url-du-repo>
 cd projet_no-sql
 ```
 
-2. Configurer la clé API (optionnel)
+2. Configurer la clé API 
 
 Copier `.env.example` en `.env` :
 ```bash
@@ -188,7 +188,7 @@ projet_no-sql/
 - Données machines et météo dans la même collection MongoDB, filtrées selon le contexte
 - Si l'API météo est down, utilise le cache Redis
 - Seuils modifiables dans `app.py` (lignes 40-44)
-- Clé API OpenWeatherMap peut prendre 10-15 min à s'activer
+- La clé API OpenWeatherMap peut prendre 10-15 min à s'activer
 
 ## Arrêt de l'application
 
