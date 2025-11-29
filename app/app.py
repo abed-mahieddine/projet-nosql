@@ -7,21 +7,21 @@ from datetime import datetime
 
 app = Flask(__name__)
 
-# Connexions aux bases de données
+# Connexions DB
 mongo_client = MongoClient(os.getenv('MONGO_URI', 'mongodb://mongo:27017/'))
 db = mongo_client.factory_db
 sensor_logs = db.sensor_logs
 
 redis_client = redis.Redis(host=os.getenv('REDIS_HOST', 'redis'), port=6379, decode_responses=True)
 
-# Liste des équipements surveillés
+# Machines surveillées
 MACHINES = ['Machine-A1', 'Machine-B2', 'Machine-C3']
 
-# Configuration de l'API météo OpenWeatherMap
-OPENWEATHER_API_KEY = 'mettre la clé api ici'
+# API météo
+OPENWEATHER_API_KEY = os.getenv('OPENWEATHER_API_KEY', '')
 OPENWEATHER_BASE_URL = 'https://api.openweathermap.org/data/2.5/weather'
 
-# Sites géographiques suivis pour la météo
+# Villes pour la météo
 WEATHER_SITES = [
     {'name': 'Paris', 'country': 'FR', 'display_name': 'Paris, France'},
     {'name': 'New York', 'country': 'US', 'display_name': 'New York, USA'},
@@ -36,63 +36,77 @@ def dashboard():
         value = float(request.form.get('value'))
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Détermination du statut selon les seuils
+        # Calcul du statut
         status = "NORMAL"
         if value > 80:
             status = "CRITICAL"
         elif value > 50:
             status = "WARNING"
 
-        # Mise à jour de l'état en temps réel dans Redis
-        redis_client.hset(f"machine:{machine_id}", mapping={
-            "current_value": value,
-            "status": status,
-            "last_seen": timestamp,
-            "metric": metric_type
-        })
-        
-        if status == "CRITICAL":
-            redis_client.incr("global_alerts_count")
+        # Redis pour l'état actuel
+        try:
+            redis_client.hset(f"machine:{machine_id}", mapping={
+                "current_value": value,
+                "status": status,
+                "last_seen": timestamp,
+                "metric": metric_type
+            })
+            
+            if status == "CRITICAL":
+                redis_client.incr("global_alerts_count")
+        except (redis.ConnectionError, redis.TimeoutError) as e:
+            print(f"Erreur Redis: {e}")
 
-        # Enregistrement dans MongoDB pour l'historique
-        log_entry = {
-            "machine_id": machine_id,
-            "metric": metric_type,
-            "value": value,
-            "status": status,
-            "timestamp": timestamp
-        }
-        sensor_logs.insert_one(log_entry)
+        # MongoDB pour l'historique
+        try:
+            log_entry = {
+                "machine_id": machine_id,
+                "metric": metric_type,
+                "value": value,
+                "status": status,
+                "timestamp": timestamp
+            }
+            sensor_logs.insert_one(log_entry)
+        except Exception as e:
+            print(f"Erreur MongoDB: {e}")
 
         return redirect(url_for('dashboard'))
 
-    # Récupération des données des machines depuis Redis
+    # Récup des données machines depuis Redis
     machines_data = []
-    for m_id in MACHINES:
-        data = redis_client.hgetall(f"machine:{m_id}")
-        if not data:
-            data = {"current_value": 0, "status": "OFFLINE", "last_seen": "Jamais", "metric": "N/A"}
-        
-        data['id'] = m_id
-        machines_data.append(data)
+    try:
+        for m_id in MACHINES:
+            data = redis_client.hgetall(f"machine:{m_id}")
+            if not data:
+                data = {"current_value": 0, "status": "OFFLINE", "last_seen": "Jamais", "metric": "N/A"}
+            
+            data['id'] = m_id
+            machines_data.append(data)
 
-    alert_count = redis_client.get("global_alerts_count")
-    if alert_count is None:
+        alert_count = redis_client.get("global_alerts_count")
+        if alert_count is None:
+            alert_count = 0
+    except (redis.ConnectionError, redis.TimeoutError):
+        # Fallback si Redis down
+        for m_id in MACHINES:
+            machines_data.append({"id": m_id, "current_value": 0, "status": "OFFLINE", "last_seen": "Erreur connexion", "metric": "N/A"})
         alert_count = 0
 
-    # Récupération de l'historique des machines (exclut les données météo)
-    recent_logs = list(sensor_logs.find({"machine_id": {"$exists": True}}).sort('_id', -1).limit(10))
+    # Historique des machines
+    try:
+        recent_logs = list(sensor_logs.find({"machine_id": {"$exists": True}}).sort('_id', -1).limit(10))
+    except Exception:
+        recent_logs = []
 
     return render_template('dashboard.html', machines=machines_data, logs=recent_logs, alert_count=alert_count)
 
 @app.route('/weather')
 def weather_dashboard():
-    """Récupération et affichage des données météorologiques des sites extérieurs"""
     weather_data = []
     
     for site in WEATHER_SITES:
         try:
-            # Requête à l'API OpenWeatherMap
+            # Appel API météo
             params = {
                 'q': f"{site['name']},{site['country']}",
                 'appid': OPENWEATHER_API_KEY,
@@ -106,33 +120,38 @@ def weather_dashboard():
                 data = response.json()
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Parsing des données reçues
                 temperature = data['main']['temp']
                 humidity = data['main']['humidity']
                 description = data['weather'][0]['description']
                 city_name = data['name']
                 feels_like = data['main'].get('feels_like', temperature)
                 
-                # Sauvegarde dans Redis pour l'état actuel
-                site_key = f"weather:{site['name']}"
-                redis_client.hset(site_key, mapping={
-                    "temperature": temperature,
-                    "humidity": humidity,
-                    "description": description,
-                    "last_update": timestamp,
-                    "city": city_name
-                })
+                # Redis pour l'état actuel
+                try:
+                    site_key = f"weather:{site['name']}"
+                    redis_client.hset(site_key, mapping={
+                        "temperature": temperature,
+                        "humidity": humidity,
+                        "description": description,
+                        "last_update": timestamp,
+                        "city": city_name
+                    })
+                except (redis.ConnectionError, redis.TimeoutError):
+                    pass
                 
-                # Enregistrement dans MongoDB pour l'historique
-                weather_log = {
-                    "site": site['display_name'],
-                    "city": city_name,
-                    "temperature": temperature,
-                    "humidity": humidity,
-                    "description": description,
-                    "timestamp": timestamp
-                }
-                sensor_logs.insert_one(weather_log)
+                # MongoDB pour l'historique
+                try:
+                    weather_log = {
+                        "site": site['display_name'],
+                        "city": city_name,
+                        "temperature": temperature,
+                        "humidity": humidity,
+                        "description": description,
+                        "timestamp": timestamp
+                    }
+                    sensor_logs.insert_one(weather_log)
+                except Exception:
+                    pass
                 
                 weather_data.append({
                     'display_name': site['display_name'],
@@ -145,7 +164,7 @@ def weather_dashboard():
                     'last_update': timestamp
                 })
             else:
-                # Fallback sur les données en cache si l'API échoue
+                # Fallback sur cache si API down
                 cached_data = redis_client.hgetall(f"weather:{site['name']}")
                 if cached_data:
                     weather_data.append({
@@ -168,7 +187,7 @@ def weather_dashboard():
                         'last_update': 'N/A'
                     })
         except Exception as e:
-            # Récupération depuis le cache en cas d'erreur réseau
+            # Cache en cas d'erreur réseau
             cached_data = redis_client.hgetall(f"weather:{site['name']}")
             if cached_data:
                 weather_data.append({
@@ -196,8 +215,11 @@ def weather_dashboard():
                     'last_update': 'N/A'
                 })
     
-    # Récupération de l'historique météo
-    weather_history = list(sensor_logs.find({"site": {"$exists": True}}).sort('_id', -1).limit(15))
+    # Historique météo
+    try:
+        weather_history = list(sensor_logs.find({"site": {"$exists": True}}).sort('_id', -1).limit(15))
+    except Exception:
+        weather_history = []
     
     return render_template('weather.html', weather_sites=weather_data, history=weather_history)
 

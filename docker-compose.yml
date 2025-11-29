@@ -4,11 +4,16 @@ services:
     ports:
       - "5000:5000"
     depends_on:
-      - mongo
-      - redis
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
     environment:
       - MONGO_URI=mongodb://mongo:27017/
       - REDIS_HOST=redis
+      - OPENWEATHER_API_KEY=${OPENWEATHER_API_KEY:-}
     restart: unless-stopped
 
   mongo:
@@ -19,6 +24,11 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:alpine
@@ -28,6 +38,11 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 volumes:
   mongo_data:
